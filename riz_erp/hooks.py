@@ -21,6 +21,16 @@ app_license = "mit"
 # 	}
 # ]
 
+fixtures = [
+    "Custom Field",
+    "Property Setter",
+    "Client Script",
+    "Server Script",
+    "Workflow",
+    "Workflow State",
+    "Workflow Action Master"
+]
+
 # Includes in <head>
 # ------------------
 
