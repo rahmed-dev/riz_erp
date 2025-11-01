@@ -22,12 +22,20 @@
    "mandatory": 0,
    "options": "\nOpen\nWorking\nPending Review\nOverdue\nTemplate\nCompleted\nCancelled",
    "wildcard_filter": 0
+  },
+  {
+   "default": "0",
+   "fieldname": "show_completed_tasks",
+   "fieldtype": "Check",
+   "label": "Show Completed Tasks",
+   "mandatory": 0,
+   "wildcard_filter": 0
   }
  ],
  "idx": 0,
  "is_standard": "Yes",
  "letterhead": null,
- "modified": "2025-10-26 20:10:53.281902",
+ "modified": "2025-11-01 08:44:14.181520",
  "modified_by": "Administrator",
  "module": "Riz Erp",
  "name": "Project Overview",

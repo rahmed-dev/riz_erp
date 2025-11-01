@@ -7,20 +7,42 @@ Project Overview Report - Server-side logic
 Displays projects and tasks in a hierarchical tree structure with interactive features.
 
 Features:
+- Server-side filtering (hide completed tasks by default)
 - Update task status directly from report (with auto-fill completed_on date)
 - Create new tasks from project rows
 - Tree structure with parent-child task relationships
+- Task selection checkboxes for bulk operations
 - Respects ERPNext permissions
 
+Filters (defined in .json):
+- project: Filter by specific project
+- status: Filter by task status
+- show_completed_tasks: Show/hide completed tasks (default: hidden)
+
 Main Functions:
-- execute(): Report data generation
+- execute(): Report data generation with server-side filtering
 - update_task_status(): Update task status via button
-- create_task_from_report(): Create new tasks via button
+- create_task_from_report(): Create new tasks via button (enhanced with expected dates in v1.2)
+- bulk_update_task_status(): Bulk update status for multiple tasks (v1.2)
+- bulk_update_task_dates(): Bulk update expected dates for multiple tasks (v1.2)
 - build_task_tree(): Build hierarchical task structure
 - flatten_task_tree(): Convert tree to flat list for display
 """
 
 import frappe
+
+
+# -------------------- Helper: Parse Boolean --------------------
+# Converts string/bool to boolean for Frappe whitelisted methods
+# Handles common string representations: 'true', '1', 'yes'
+# ----------------------------------------------------------------
+def parse_bool(value):
+    """Parse boolean from string or bool value"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() in ('true', '1', 'yes')
+    return bool(value)
 
 
 # -------------------- update_task_status --------------------
@@ -64,7 +86,8 @@ def update_task_status(task_name, new_status):
 # Requires: Task create permission
 # ------------------------------------------------------------------
 @frappe.whitelist()
-def create_task_from_report(project, task_name, description=None, status="Open", assigned_to=None, due_date=None):
+def create_task_from_report(project, task_name, description=None, status="Open", assigned_to=None,
+                            due_date=None, exp_start_date=None, exp_end_date=None):
     """Create a new task from Project Overview report"""
     # Check permissions
     if not frappe.has_permission("Task", "create"):
@@ -78,7 +101,8 @@ def create_task_from_report(project, task_name, description=None, status="Open",
             "description": description,
             "project": project,
             "status": status or "Open",
-            "exp_end_date": due_date
+            "exp_start_date": exp_start_date,
+            "exp_end_date": exp_end_date or due_date
         })
 
         # Insert (save) the task first
@@ -109,6 +133,142 @@ def create_task_from_report(project, task_name, description=None, status="Open",
             "success": False,
             "message": f"Failed to create task: {str(e)}"
         }
+
+
+# -------------------- bulk_update_task_status --------------------
+# Updates status for multiple tasks with optional auto-complete date
+# Processes in batches of 10 for performance
+# Requires: Task write permission for each task
+# Returns: Dict with success/failure counts and error details
+# ------------------------------------------------------------------
+@frappe.whitelist()
+def bulk_update_task_status(task_ids, new_status, auto_complete=True):
+    """Bulk update status for multiple tasks"""
+    import json
+
+    # Parse task_ids if string
+    if isinstance(task_ids, str):
+        task_ids = json.loads(task_ids)
+
+    # Parse auto_complete to boolean
+    auto_complete = parse_bool(auto_complete)
+
+    updated = 0
+    failed = 0
+    errors = []
+
+    # Process in batches of 10
+    for i in range(0, len(task_ids), 10):
+        batch = task_ids[i:i+10]
+
+        for task_id in batch:
+            try:
+                # Get task document
+                task = frappe.get_doc("Task", task_id)
+
+                # Check write permission
+                if not frappe.has_permission("Task", "write", task):
+                    failed += 1
+                    errors.append(f"{task_id}: Permission denied")
+                    continue
+
+                # Update status
+                task.status = new_status
+
+                # Auto-fill completed_on date if status is Completed
+                if new_status == "Completed" and auto_complete:
+                    task.completed_on = frappe.utils.today()
+
+                # Save task
+                task.save()
+                updated += 1
+
+            except Exception as e:
+                failed += 1
+                errors.append(f"{task_id}: {str(e)}")
+                frappe.log_error(f"Bulk status update failed for {task_id}: {str(e)}", "Bulk Status Update Error")
+
+    return {
+        "success": failed == 0,
+        "updated": updated,
+        "failed": failed,
+        "errors": errors
+    }
+
+
+# -------------------- bulk_update_task_dates --------------------
+# Updates expected dates for multiple tasks
+# Supports "only empty" mode to skip tasks with existing dates
+# Processes in batches of 10 for performance
+# Requires: Task write permission for each task
+# Returns: Dict with success/failure/skipped counts and error details
+# ----------------------------------------------------------------
+@frappe.whitelist()
+def bulk_update_task_dates(task_ids, exp_start_date=None, exp_end_date=None, only_empty=False):
+    """Bulk update expected dates for multiple tasks"""
+    import json
+
+    # Parse task_ids if string
+    if isinstance(task_ids, str):
+        task_ids = json.loads(task_ids)
+
+    # Parse only_empty to boolean
+    only_empty = parse_bool(only_empty)
+
+    updated = 0
+    skipped = 0
+    failed = 0
+    errors = []
+
+    # Process in batches of 10
+    for i in range(0, len(task_ids), 10):
+        batch = task_ids[i:i+10]
+
+        for task_id in batch:
+            try:
+                # Get task document
+                task = frappe.get_doc("Task", task_id)
+
+                # Check write permission
+                if not frappe.has_permission("Task", "write", task):
+                    failed += 1
+                    errors.append(f"{task_id}: Permission denied")
+                    continue
+
+                # Check if should skip due to only_empty mode
+                should_skip = False
+                if only_empty:
+                    if exp_start_date and task.exp_start_date:
+                        should_skip = True
+                    if exp_end_date and task.exp_end_date:
+                        should_skip = True
+
+                if should_skip:
+                    skipped += 1
+                    continue
+
+                # Update dates
+                if exp_start_date:
+                    task.exp_start_date = exp_start_date
+                if exp_end_date:
+                    task.exp_end_date = exp_end_date
+
+                # Save task
+                task.save()
+                updated += 1
+
+            except Exception as e:
+                failed += 1
+                errors.append(f"{task_id}: {str(e)}")
+                frappe.log_error(f"Bulk date update failed for {task_id}: {str(e)}", "Bulk Date Update Error")
+
+    return {
+        "success": failed == 0,
+        "updated": updated,
+        "skipped": skipped,
+        "failed": failed,
+        "errors": errors
+    }
 
 
 # -------------------- execute --------------------
@@ -146,8 +306,14 @@ def execute(filters=None):
 
         # Build task filter
         task_filters = {"project": p.name}
+
+        # Handle status filtering
         if filters.get("status"):
+            # User explicitly selected a status - use that
             task_filters["status"] = filters.get("status")
+        elif not filters.get("show_completed_tasks"):
+            # No specific status selected AND show_completed unchecked - hide completed
+            task_filters["status"] = ["!=", "Completed"]
 
         # fetch tasks for this project
         tasks = frappe.get_all(
@@ -183,14 +349,20 @@ def execute(filters=None):
 def build_task_tree(tasks):
     """Convert flat task list into nested dict by parent_task"""
     tree = {}
-    lookup = {t["name"]: t for t in tasks}
+    lookup = {}
+
+    # Single loop: build lookup and initialize children
     for t in tasks:
         t["children"] = []
+        lookup[t["name"]] = t
+
+    # Build hierarchy
     for t in tasks:
         if t.get("parent_task") and t["parent_task"] in lookup:
             lookup[t["parent_task"]]["children"].append(t)
         else:
             tree[t["name"]] = t
+
     return tree
 
 

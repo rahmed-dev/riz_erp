@@ -4,7 +4,25 @@ This folder contains **active** development stories for the RIZ ERP custom app f
 
 ## Currently Active Stories
 
-**No active stories at this time.**
+**Epic 2: Project Overview Report - Bulk Operations Enhancement** 🚧 IN PROGRESS
+
+- **Story 1.1:** Foundation - Task Selection System and Smart Filtering - **Done** ✅
+- **Story 1.2:** Bulk Status Updates with Action Toolbar - **Done** ✅
+- **Story 1.3:** Bulk Expected Date Updates - **Done** ✅
+- **Story 1.4:** Polish, Testing, Documentation, and Deployment - **InProgress** 🚧
+
+**Story Dependencies:**
+- Story 1.1 is foundation (must be completed first)
+- Stories 1.2 and 1.3 depend on 1.1
+- Story 1.4 depends on 1.1, 1.2, and 1.3
+
+**PRD:** See `docs/prd/bulk-operations-enhancement.md` for complete requirements
+
+---
+
+## Previously Completed Work
+
+**Epic 1: Project Overview Report Enhancements** ✅ COMPLETED
 
 All Epic 1 stories have been completed and moved to [archive/stories-completed/](../archive/stories-completed/).
 

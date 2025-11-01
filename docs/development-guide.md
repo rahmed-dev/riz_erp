@@ -61,12 +61,35 @@ riz_erp/
 
 ## Best Practices
 
+### Core Principles (CRITICAL)
+
+1. **Server-Side First** - Always prefer server-side logic over client-side
+   - ✅ Filter data in Python `execute()` method
+   - ❌ Filter data in JavaScript after receiving it
+   - **Why:** More robust, no timing issues, respects permissions
+
+2. **Use Frappe Standards** - Use built-in features, not custom implementations
+   - ✅ Define filters in `.json` file
+   - ❌ Build custom filter UI in JavaScript
+   - **Why:** Maintainable, follows framework patterns
+
+3. **Minimize Code** - Less code = fewer bugs
+   - ✅ One simple server-side filter (5 lines)
+   - ❌ 120 lines of complex client-side filtering
+   - **Why:** Easier to debug, maintain, and understand
+
+4. **Reload Properly** - JSON changes need database sync
+   - Use: `bench --site [site] reload-doc [app] Report "[Name]"`
+   - Or: Manually add filters through UI (Report List → Edit)
+   - **Why:** JSON files don't auto-sync to database
+
 ### Python (Server-Side)
 
 - Use Frappe's built-in methods (`frappe.get_doc()`, `frappe.db.get_list()`, etc.)
 - Always check permissions before allowing actions
 - Handle errors gracefully with try/except
 - Follow PEP 8 style guidelines
+- **PREFER server-side filtering** in report `execute()` method
 
 **Example:**
 ```python
@@ -84,6 +107,23 @@ def update_task_status(task_name, new_status):
     task.save()
 
     return {"success": True, "message": "Status updated"}
+```
+
+**Server-Side Filtering (Script Reports):**
+```python
+def execute(filters=None):
+    if not filters:
+        filters = {}
+
+    # Build query filters based on report filters
+    task_filters = {"project": filters.get("project")}
+
+    # Handle custom filter logic
+    if not filters.get("show_completed_tasks"):
+        task_filters["status"] = ["!=", "Completed"]
+
+    tasks = frappe.get_all("Task", filters=task_filters, fields=[...])
+    return columns, data
 ```
 
 ### JavaScript (Client-Side)
@@ -114,10 +154,60 @@ frappe.ui.form.on("Task", {
 });
 ```
 
-### Report Development
+### Script Report Development
 
+Script Reports consist of 3 files:
+1. **`.py`** - Server-side data logic (MOST IMPORTANT)
+2. **`.json`** - Report configuration (filters, metadata)
+3. **`.js`** - Client-side UI enhancements (buttons, formatters)
+
+**Key Rules:**
+
+1. **Define Filters in JSON** - Not in JavaScript
+   ```json
+   "filters": [
+     {
+       "fieldname": "show_completed_tasks",
+       "fieldtype": "Check",
+       "label": "Show Completed Tasks",
+       "default": "0"
+     }
+   ]
+   ```
+
+2. **Filter Data in Python** - Use `filters` parameter in `execute()`
+   ```python
+   def execute(filters=None):
+       task_filters = {}
+       if not filters.get("show_completed_tasks"):
+           task_filters["status"] = ["!=", "Completed"]
+
+       tasks = frappe.get_all("Task", filters=task_filters)
+       return columns, data
+   ```
+
+3. **Use JavaScript Only For:**
+   - UI formatting (badges, colors, buttons)
+   - Click handlers for buttons
+   - Dialogs and user interactions
+   - NOT for filtering data
+
+4. **After JSON Changes:**
+   ```bash
+   # Option 1: Reload specific report
+   bench --site [site] reload-doc [app] Report "[Name]"
+
+   # Option 2: Run migrate
+   bench --site [site] migrate
+
+   # Option 3: Manual UI (if bench commands fail)
+   # Go to Report List → Edit report → Add filter manually
+   ```
+
+**Performance:**
 - Keep queries efficient (use proper filters and indexes)
 - Test with large datasets (100+ projects, 500+ tasks)
+- Let database do the filtering (server-side)
 - Cache data when appropriate
 - Document report columns and their purpose
 
