@@ -45,40 +45,68 @@ def parse_bool(value):
     return bool(value)
 
 
-# -------------------- update_task_status --------------------
+# -------------------- update_task ---------------------------
 # Updates a task's status from the Project Overview report
+# Update Task Next Action field from the Project Overview report.
 # Auto-fills completed_on date when status is set to "Completed"
 # Requires: Task write permission
 # ------------------------------------------------------------
 @frappe.whitelist()
-def update_task_status(task_name, new_status):
-    """Update task status from Project Overview report"""
+def update_task(task_name, new_status=None, custom_next_action=None):
+    """Update task status and/or custom next action
+
+    Args:
+        task_name: Task document name
+        new_status: Optional new status value
+        custom_next_action: Optional next action value
+
+    Note: At least one of new_status or custom_next_action must be provided
+    """
     # Check permissions
     if not frappe.has_permission("Task", "write"):
         frappe.throw("You do not have permission to update tasks")
 
+    # Validate at least one field is being updated
+    if not new_status and not custom_next_action:
+        frappe.throw("Please provide at least one field to update (status or next action)")
+
     try:
-        # Get and update task
+        # Get task document
         task = frappe.get_doc("Task", task_name)
-        task.status = new_status
 
-        # Auto-fill completed_on when status is Completed
-        if new_status == "Completed":
-            task.completed_on = frappe.utils.today()
+        # Track what was updated for message
+        updates = []
 
+        # Update status if provided
+        if new_status:
+            task.status = new_status
+            updates.append(f"status to {new_status}")
+
+            # Auto-fill completed_on when status is Completed
+            if new_status == "Completed":
+                task.completed_on = frappe.utils.today()
+
+        # Update custom_next_action if provided (and not empty)
+        if custom_next_action:
+            task.custom_next_action = custom_next_action
+            updates.append(f"next action to '{custom_next_action}'")
+
+        # Save task
         task.save()
+
+        # Build success message
+        message = "Task updated: " + " and ".join(updates)
 
         return {
             "success": True,
-            "message": f"Task status updated to {new_status}"
+            "message": message
         }
     except Exception as e:
-        frappe.log_error(f"Error updating task status: {str(e)}", "Task Status Update Error")
+        frappe.log_error(f"Error updating task: {str(e)}", "Task Update Error")
         return {
             "success": False,
-            "message": "Failed to update task status"
+            "message": f"Failed to update task: {str(e)}"
         }
-
 
 # -------------------- create_task_from_report --------------------
 # Creates a new task from the Project Overview report
@@ -142,8 +170,17 @@ def create_task_from_report(project, task_name, description=None, status="Open",
 # Returns: Dict with success/failure counts and error details
 # ------------------------------------------------------------------
 @frappe.whitelist()
-def bulk_update_task_status(task_ids, new_status, auto_complete=True):
-    """Bulk update status for multiple tasks"""
+def bulk_update_task_status(task_ids, new_status=None, custom_next_action=None, auto_complete=True):
+    """Bulk update status and/or custom next action for multiple tasks
+
+    Args:
+        task_ids: List of task IDs (or JSON string)
+        new_status: Optional new status value
+        custom_next_action: Optional next action value
+        auto_complete: Auto-fill completed_on date if status is Completed
+
+    Note: At least one of new_status or custom_next_action must be provided
+    """
     import json
 
     # Parse task_ids if string
@@ -152,6 +189,15 @@ def bulk_update_task_status(task_ids, new_status, auto_complete=True):
 
     # Parse auto_complete to boolean
     auto_complete = parse_bool(auto_complete)
+
+    # Validate at least one field is being updated
+    if not new_status and not custom_next_action:
+        return {
+            "success": False,
+            "updated": 0,
+            "failed": 0,
+            "errors": ["Please provide at least one field to update (status or next action)"]
+        }
 
     updated = 0
     failed = 0
@@ -172,12 +218,17 @@ def bulk_update_task_status(task_ids, new_status, auto_complete=True):
                     errors.append(f"{task_id}: Permission denied")
                     continue
 
-                # Update status
-                task.status = new_status
+                # Update status if provided
+                if new_status:
+                    task.status = new_status
 
-                # Auto-fill completed_on date if status is Completed
-                if new_status == "Completed" and auto_complete:
-                    task.completed_on = frappe.utils.today()
+                    # Auto-fill completed_on date if status is Completed
+                    if new_status == "Completed" and auto_complete:
+                        task.completed_on = frappe.utils.today()
+
+                # Update custom_next_action if provided (and not empty)
+                if custom_next_action:
+                    task.custom_next_action = custom_next_action
 
                 # Save task
                 task.save()
@@ -186,7 +237,7 @@ def bulk_update_task_status(task_ids, new_status, auto_complete=True):
             except Exception as e:
                 failed += 1
                 errors.append(f"{task_id}: {str(e)}")
-                frappe.log_error(f"Bulk status update failed for {task_id}: {str(e)}", "Bulk Status Update Error")
+                frappe.log_error(f"Bulk update failed for {task_id}: {str(e)}", "Bulk Update Error")
 
     return {
         "success": failed == 0,
@@ -289,6 +340,26 @@ def execute(filters=None):
     projects = frappe.get_all("Project", fields=["name", "project_name"], filters=project_filters)
 
     for p in projects:
+        # Build task filter
+        task_filters = {"project": p.name}
+
+        # Handle status filtering
+        if filters.get("status"):
+            # User explicitly selected a status - use that
+            task_filters["status"] = filters.get("status")
+        elif not filters.get("show_completed_tasks"):
+            # No specific status selected AND show_completed unchecked - hide completed
+            task_filters["status"] = ["not in", ["Completed", "Cancelled"]]
+
+        # fetch tasks for this project
+        tasks = frappe.get_all(
+            "Task",
+            filters=task_filters,
+            fields=["name", "subject", "custom_next_action" , "type", "status", "exp_start_date", "exp_end_date", "progress", "parent_task"]
+        )
+        # ✅ Skip project if no tasks found
+        if not tasks:
+          continue
         # Project node (parent row)
         project_node = {
             "indent": 0,
@@ -303,41 +374,22 @@ def execute(filters=None):
             "actions": ""  # Placeholder for actions column
         }
         data.append(project_node)
-
-        # Build task filter
-        task_filters = {"project": p.name}
-
-        # Handle status filtering
-        if filters.get("status"):
-            # User explicitly selected a status - use that
-            task_filters["status"] = filters.get("status")
-        elif not filters.get("show_completed_tasks"):
-            # No specific status selected AND show_completed unchecked - hide completed
-            task_filters["status"] = ["!=", "Completed"]
-
-        # fetch tasks for this project
-        tasks = frappe.get_all(
-            "Task",
-            filters=task_filters,
-            fields=["name", "subject", "type", "status", "exp_start_date", "exp_end_date", "progress", "parent_task"]
-        )
-
         # build and flatten the task tree
         task_tree = build_task_tree(tasks)
         data.extend(flatten_task_tree(task_tree, indent=1))
 
     # column definitions
     columns = [
-        {"label": "Project", "fieldname": "project", "fieldtype": "Link", "options": "Project", "width": 200},
-        {"label": "Task Subject", "fieldname": "task_link", "fieldtype": "Data", "width": 250},
+        {"label": "Project", "fieldname": "project", "fieldtype": "Link", "options": "Project", "width": 70},
+        {"label": "Task Subject", "fieldname": "task_link", "fieldtype": "Data", "width": 450},
+        {"label": "Next Action", "fieldname": "custom_next_action", "fieldtype": "Data", "width": 150},
         {"label": "Type", "fieldname": "type", "fieldtype": "Data", "width": 100},
-        {"label": "Status", "fieldname": "status", "fieldtype": "Data", "width": 120},
+        {"label": "Status", "fieldname": "status", "fieldtype": "Data", "width": 90},
         {"label": "Expected Start", "fieldname": "expected_start_date", "fieldtype": "Date", "width": 120},
         {"label": "Expected End", "fieldname": "expected_end_date", "fieldtype": "Date", "width": 120},
         {"label": "Progress %", "fieldname": "progress", "fieldtype": "Percent", "width": 100},
         {"label": "Actions", "fieldname": "actions", "fieldtype": "Data", "width": 150},
     ]
-
     return columns, data
 
 
@@ -380,6 +432,7 @@ def flatten_task_tree(tree, indent=1):
             "indent": indent,
             "project": "",
             "task_link": task_link,
+            "custom_next_action": t.get("custom_next_action", ""),
             "type": t.get("type", "Task"),
             "status": t.get("status"),
             "expected_start_date": t.get("exp_start_date"),

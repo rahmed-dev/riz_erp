@@ -181,53 +181,66 @@ frappe.query_reports["Project Overview"] = {
         // Handles clicks on "Update Status" buttons
         // Opens modal dialog for status selection and updates task via API
         // -----------------------------------------------------------------------
-        $(document).on("click", ".btn-update-status", function() {
-            let task_name = $(this).data("task-name");
-            let current_status = $(this).data("current-status");
+          $(document).on("click", ".btn-update-status", function() {
+      let task_name = $(this).data("task-name");
+      let current_status = $(this).data("current-status");
 
-            // Create status update dialog
-            let d = new frappe.ui.Dialog({
-                title: 'Update Task Status',
-                fields: [
-                    {
-                        label: 'Current Status',
-                        fieldname: 'current_status',
-                        fieldtype: 'Data',
-                        read_only: 1,
-                        default: current_status
-                    },
-                    {
-                        label: 'New Status',
-                        fieldname: 'new_status',
-                        fieldtype: 'Select',
-                        options: TASK_STATUSES,
-                        reqd: 1
-                    }
-                ],
-                primary_action_label: 'Update',
-                primary_action(values) {
-                    // Call server method to update task status
-                    frappe.call({
-                        method: "riz_erp.riz_erp.report.project_overview.project_overview.update_task_status",
-                        args: {
-                            task_name: task_name,
-                            new_status: values.new_status
-                        },
-                        callback: function(r) {
-                            if (r.message && r.message.success) {
-                                frappe.msgprint(r.message.message);
-                                report.refresh();
-                            } else {
-                                frappe.msgprint("Error updating status");
-                            }
-                        }
-                    });
-                    d.hide();
-                }
-            });
-            d.show();
-        });
+      // Create task update dialog
+      let d = new frappe.ui.Dialog({
+          title: 'Update Task',
+          fields: [
+              {
+                  label: 'Current Status',
+                  fieldname: 'current_status',
+                  fieldtype: 'Data',
+                  read_only: 1,
+                  default: current_status
+              },
+              {
+                  label: 'New Status',
+                  fieldname: 'new_status',
+                  fieldtype: 'Select',
+                  options: ['', ...TASK_STATUSES],  // Empty option for "don't update"
+                  description: 'Leave empty to keep current status'
+              },
+              {
+                  label: 'Next Action',
+                  fieldname: 'custom_next_action',
+                  fieldtype: 'Data',
+                  description: 'Leave empty to keep current next action'
+              }
+          ],
+          primary_action_label: 'Update',
+          primary_action(values) {
+              // Validate at least one field is being updated
+              if (!values.new_status && !values.custom_next_action) {
+                  frappe.msgprint('Please provide at least one field to update');
+                  return;
+              }
 
+              // Call server method to update task
+              frappe.call({
+                  method:
+  "riz_erp.riz_erp.report.project_overview.project_overview.update_task",
+                  args: {
+                      task_name: task_name,
+                      new_status: values.new_status || null,
+                      custom_next_action: values.custom_next_action || null
+                  },
+                  callback: function(r) {
+                      if (r.message && r.message.success) {
+                          frappe.msgprint(r.message.message);
+                          report.refresh();
+                      } else {
+                          frappe.msgprint(r.message.message || "Error updating task");
+                      }
+                  }
+              });
+              d.hide();
+          }
+      });
+      d.show();
+  });
         // -------------------- Create Task Button Handler --------------------
         // Handles clicks on "Create Task" buttons on project rows
         // Calls unified showCreateTaskDialog with project pre-filled
@@ -356,14 +369,14 @@ function handleBulkUpdateResponse(result, report) {
 }
 
 // -------------------- showBulkStatusUpdateDialog --------------------
-// Displays dialog for bulk status updates
+// Displays dialog for bulk status and next action updates
 // --------------------------------------------------------------------
 function showBulkStatusUpdateDialog(report) {
     if (!validateSelection()) return;
 
     const count = selectedTaskIds.size;
     let d = new frappe.ui.Dialog({
-        title: `Update Status for ${count} ${count === 1 ? 'Task' : 'Tasks'}`,
+        title: `Update ${count} ${count === 1 ? 'Task' : 'Tasks'}`,
         fields: [
             {
                 fieldtype: 'HTML',
@@ -373,8 +386,14 @@ function showBulkStatusUpdateDialog(report) {
                 label: 'New Status',
                 fieldname: 'new_status',
                 fieldtype: 'Select',
-                options: TASK_STATUSES,
-                reqd: 1
+                options: ['', ...TASK_STATUSES],  // Empty option for "don't update"
+                description: 'Leave empty to keep current status'
+            },
+            {
+                label: 'Next Action',
+                fieldname: 'custom_next_action',
+                fieldtype: 'Data',
+                description: 'Leave empty to keep current next action'
             },
             {
                 label: 'Auto-fill completion date (when status = Completed)',
@@ -386,11 +405,18 @@ function showBulkStatusUpdateDialog(report) {
         ],
         primary_action_label: 'Update All Tasks',
         primary_action(values) {
+            // Validate at least one field is being updated
+            if (!values.new_status && !values.custom_next_action) {
+                frappe.msgprint('Please provide at least one field to update');
+                return;
+            }
+
             frappe.call({
                 method: "riz_erp.riz_erp.report.project_overview.project_overview.bulk_update_task_status",
                 args: {
                     task_ids: Array.from(selectedTaskIds),
-                    new_status: values.new_status,
+                    new_status: values.new_status || null,
+                    custom_next_action: values.custom_next_action || null,
                     auto_complete: values.auto_complete || false
                 },
                 freeze: true,
