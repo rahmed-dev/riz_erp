@@ -22,6 +22,22 @@
  */
 
 // -------------------- Constants --------------------
+const STATUS_COLORS = {
+    completed: "status-green",
+    done: "status-green",
+    paid: "status-green",
+    working: "status-orange",
+    pending: "status-orange",
+    "in progress": "status-orange",
+    processing: "status-orange",
+    cancelled: "status-red",
+    failed: "status-red",
+    rejected: "status-red",
+    overdue: "status-red",
+    "on hold": "status-yellow",
+    "pending review": "status-yellow"
+};
+
 const TASK_STATUSES = ['Open', 'Working', 'Pending Review', 'Completed', 'Cancelled', 'Overdue', 'Template'];
 
 // -------------------- Global Selection State --------------------
@@ -45,8 +61,8 @@ frappe.query_reports["Project Overview"] = {
         // Buttons visibility updates based on task selection
         // --------------------------------------------------------------------
 
-        // Button: Update Task (only visible when tasks selected)
-        report.page.add_inner_button(__('Update Task'), function() {
+        // Button: Update Status (only visible when tasks selected)
+        report.page.add_inner_button(__('Update Status'), function() {
             showBulkStatusUpdateDialog(report);
         }).hide();  // Hidden by default
 
@@ -67,27 +83,71 @@ frappe.query_reports["Project Overview"] = {
             const hasSelection = selectedTaskIds.size > 0;
 
             // Show/hide buttons based on selection
-            report.page.inner_toolbar.find('.btn-default:contains("Update Task")').toggle(hasSelection);
+            report.page.inner_toolbar.find('.btn-default:contains("Update Status")').toggle(hasSelection);
             report.page.inner_toolbar.find('.btn-default:contains("Update Dates")').toggle(hasSelection);
         }
 
         // Store reference for use in checkbox handler
         report.updateButtonVisibility = updateButtonVisibility;
 
-        // Minimal functional styles for checkboxes only
-        const styleId = "project-overview-functional";
+        // Inject modern pastel badge styles and v1.2 bulk operation styles
+        const styleId = "custom-report-status-badges";
         if (!document.getElementById(styleId)) {
             const style = document.createElement("style");
             style.id = styleId;
             style.innerHTML = `
+                .status-badge {
+                    padding: 4px 10px;
+                    border-radius: 9999px;
+                    font-size: 12px;
+                    font-weight: 500;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    text-transform: capitalize;
+                    letter-spacing: 0.2px;
+                }
+
+                .status-green {
+                    background-color: #ecfdf5;
+                    color: #047857;
+                }
+
+                .status-orange {
+                    background-color: #fff7ed;
+                    color: #b45309;
+                }
+
+                .status-red {
+                    background-color: #fef2f2;
+                    color: #b91c1c;
+                }
+
+                .status-yellow {
+                    background-color: #fefce8;
+                    color: #854d0e;
+                }
+
+                .status-gray {
+                    background-color: #f3f4f6;
+                    color: #374151;
+                }
+
+                /* v1.2 Bulk Operations Styles */
+                .selected-task-row {
+                    background: rgba(66, 133, 244, 0.08) !important;
+                    border-left: 3px solid #4285f4 !important;
+                    transition: all 150ms ease;
+                }
+
                 .task-select-checkbox {
                     width: 18px;
                     height: 18px;
+                    min-width: 18px;
+                    min-height: 18px;
                     cursor: pointer;
                     margin: 0;
-                }
-                .selected-task-row {
-                    background: rgba(66, 133, 244, 0.08) !important;
+                    padding: 12px;
                 }
             `;
             document.head.appendChild(style);
@@ -158,9 +218,6 @@ frappe.query_reports["Project Overview"] = {
                   return;
               }
 
-              // Disable button to prevent duplicates
-              d.get_primary_btn().prop('disabled', true);
-
               // Call server method to update task
               frappe.call({
                   method:
@@ -170,28 +227,16 @@ frappe.query_reports["Project Overview"] = {
                       new_status: values.new_status || null,
                       custom_next_action: values.custom_next_action || null
                   },
-                  freeze: true,
-                  freeze_message: __('Updating task...'),
                   callback: function(r) {
                       if (r.message && r.message.success) {
                           frappe.msgprint(r.message.message);
                           report.refresh();
-                          d.hide();
                       } else {
-                          d.get_primary_btn().prop('disabled', false);
                           frappe.msgprint(r.message.message || "Error updating task");
                       }
-                  },
-                  error: function(r) {
-                      d.get_primary_btn().prop('disabled', false);
-                      console.error('Task update error:', r);
-                      frappe.msgprint({
-                          title: __('Error'),
-                          message: r.message || __('Failed to update task'),
-                          indicator: 'red'
-                      });
                   }
               });
+              d.hide();
           }
       });
       d.show();
@@ -229,31 +274,24 @@ frappe.query_reports["Project Overview"] = {
             value = checkboxHtml + value;
         }
 
-        // -------------------- Status Rendering --------------------
-        // Use Frappe's built-in indicator pills with colors
-        // ----------------------------------------------------------
+        // -------------------- Status Badge Rendering --------------------
+        // Renders colored status badges based on task status
+        // ----------------------------------------------------------------
         if (column.fieldname === "status" && data && data.status) {
-            // Map status to Frappe indicator colors
-            const status = data.status.toLowerCase();
-            let indicator_color = "gray";
-
-            if (status === "completed") indicator_color = "green";
-            else if (status === "working" || status === "in progress") indicator_color = "orange";
-            else if (status === "pending review") indicator_color = "yellow";
-            else if (status === "cancelled" || status === "overdue") indicator_color = "red";
-            else if (status === "open") indicator_color = "blue";
-
-            value = `<span class="indicator-pill ${indicator_color}">${frappe.utils.escape_html(data.status)}</span>`;
+            const colorClass = STATUS_COLORS[data.status.toLowerCase()] || "status-gray";
+            value = `<span class="status-badge ${colorClass}">
+                        ${frappe.utils.escape_html(data.status)}
+                    </span>`;
         }
 
-        // -------------------- Update Task Button (Tasks Only) --------------------
-        // Adds "Update Task" button to task rows (indent > 0)
+        // -------------------- Update Status Button (Tasks Only) --------------------
+        // Adds "Update Status" button to task rows (indent > 0)
         // ---------------------------------------------------------------------------
         if (column.fieldname === "actions" && data && data.indent > 0) {
             value = `<button class="btn btn-xs btn-primary btn-update-status"
                      data-task-name="${data.name}"
                      data-current-status="${data.status || ''}">
-                     Update Task
+                     Update Status
                      </button>`;
         }
 
@@ -373,9 +411,6 @@ function showBulkStatusUpdateDialog(report) {
                 return;
             }
 
-            // Disable button to prevent duplicates
-            d.get_primary_btn().prop('disabled', true);
-
             frappe.call({
                 method: "riz_erp.riz_erp.report.project_overview.project_overview.bulk_update_task_status",
                 args: {
@@ -387,15 +422,9 @@ function showBulkStatusUpdateDialog(report) {
                 freeze: true,
                 freeze_message: `Updating ${count} tasks...`,
                 callback: function(r) {
-                    if (r.message) {
-                        handleBulkUpdateResponse(r.message, report);
-                        d.hide();
-                    } else {
-                        d.get_primary_btn().prop('disabled', false);
-                    }
+                    if (r.message) handleBulkUpdateResponse(r.message, report);
                 },
                 error: function() {
-                    d.get_primary_btn().prop('disabled', false);
                     frappe.msgprint({
                         title: 'Error',
                         message: 'Failed to update tasks. Please try again.',
@@ -403,6 +432,7 @@ function showBulkStatusUpdateDialog(report) {
                     });
                 }
             });
+            d.hide();
         }
     });
     d.show();
@@ -462,9 +492,6 @@ function showBulkDateUpdateDialog(report) {
                 }
             }
 
-            // Disable button to prevent duplicates
-            d.get_primary_btn().prop('disabled', true);
-
             frappe.call({
                 method: "riz_erp.riz_erp.report.project_overview.project_overview.bulk_update_task_dates",
                 args: {
@@ -476,15 +503,9 @@ function showBulkDateUpdateDialog(report) {
                 freeze: true,
                 freeze_message: `Updating ${count} tasks...`,
                 callback: function(r) {
-                    if (r.message) {
-                        handleBulkUpdateResponse(r.message, report);
-                        d.hide();
-                    } else {
-                        d.get_primary_btn().prop('disabled', false);
-                    }
+                    if (r.message) handleBulkUpdateResponse(r.message, report);
                 },
                 error: function() {
-                    d.get_primary_btn().prop('disabled', false);
                     frappe.msgprint({
                         title: 'Error',
                         message: 'Failed to update task dates. Please try again.',
@@ -492,6 +513,7 @@ function showBulkDateUpdateDialog(report) {
                     });
                 }
             });
+            d.hide();
         }
     });
 
@@ -564,9 +586,6 @@ function showCreateTaskDialog(report, projectName = null) {
         ],
         primary_action_label: 'Create Task',
         primary_action(values) {
-            // Disable button to prevent duplicates
-            d.get_primary_btn().prop('disabled', true);
-
             frappe.call({
                 method: "riz_erp.riz_erp.report.project_overview.project_overview.create_task_from_report",
                 args: {
@@ -579,29 +598,22 @@ function showCreateTaskDialog(report, projectName = null) {
                     exp_end_date: values.exp_end_date
                 },
                 freeze: true,
-                freeze_message: __('Creating task...'),
+                freeze_message: "Creating task...",
                 callback: function(r) {
                     if (r.message && r.message.success) {
                         frappe.msgprint(r.message.message);
                         report.refresh();
                         d.hide();
                     } else {
-                        d.get_primary_btn().prop('disabled', false);
                         frappe.msgprint({
-                            title: __('Error'),
-                            message: r.message.message || __('Failed to create task'),
-                            indicator: 'red'
+                            title: "Error",
+                            message: r.message.message || "Failed to create task",
+                            indicator: "red"
                         });
                     }
                 },
-                error: function(r) {
-                    d.get_primary_btn().prop('disabled', false);
-                    console.error('Task creation error:', r);
-                    frappe.msgprint({
-                        title: __('Error'),
-                        message: r.message || __('An error occurred while creating the task'),
-                        indicator: 'red'
-                    });
+                error: function() {
+                    frappe.msgprint("An error occurred while creating the task");
                 }
             });
         }

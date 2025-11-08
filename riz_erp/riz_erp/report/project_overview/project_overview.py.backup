@@ -56,28 +56,12 @@ def update_task(task_name, new_status=None, custom_next_action=None):
     """Update task status and/or custom next action
 
     Args:
-        task_name (str): Task document name
-        new_status (str): Optional new status value
-        custom_next_action (str): Optional next action value
-
-    Returns:
-        dict: {"success": bool, "message": str}
+        task_name: Task document name
+        new_status: Optional new status value
+        custom_next_action: Optional next action value
 
     Note: At least one of new_status or custom_next_action must be provided
     """
-    from frappe.utils import cstr
-
-    # Type conversions - JavaScript sends everything as strings
-    task_name = cstr(task_name).strip()
-    new_status = cstr(new_status).strip() if new_status else None
-    custom_next_action = cstr(custom_next_action).strip() if custom_next_action else None
-
-    # Treat empty strings as None
-    if new_status == "":
-        new_status = None
-    if custom_next_action == "":
-        custom_next_action = None
-
     # Check permissions
     if not frappe.has_permission("Task", "write"):
         frappe.throw("You do not have permission to update tasks")
@@ -132,44 +116,7 @@ def update_task(task_name, new_status=None, custom_next_action=None):
 @frappe.whitelist()
 def create_task_from_report(project, task_name, description=None, status="Open", assigned_to=None,
                             due_date=None, exp_start_date=None, exp_end_date=None):
-    """Create a new task from Project Overview report
-
-    Args:
-        project (str): Project name
-        task_name (str): Task subject
-        description (str): Task description
-        status (str): Task status
-        assigned_to (str): User to assign task to
-        due_date (str): Due date (DEPRECATED - use exp_end_date)
-        exp_start_date (str): Expected start date
-        exp_end_date (str): Expected end date
-
-    Returns:
-        dict: {"success": bool, "message": str, "task_name": str}
-    """
-    from frappe.utils import cstr, getdate
-
-    # Type conversions - JavaScript sends everything as strings
-    project = cstr(project).strip()
-    task_name = cstr(task_name).strip()
-    description = cstr(description).strip() if description else None
-    status = cstr(status).strip() if status else "Open"
-    assigned_to = cstr(assigned_to).strip() if assigned_to else None
-
-    # Convert dates
-    if exp_start_date:
-        exp_start_date = getdate(exp_start_date)
-    if exp_end_date:
-        exp_end_date = getdate(exp_end_date)
-    elif due_date:
-        exp_end_date = getdate(due_date)
-
-    # Validate required fields
-    if not project:
-        frappe.throw("Project is required")
-    if not task_name:
-        frappe.throw("Task name is required")
-
+    """Create a new task from Project Overview report"""
     # Check permissions
     if not frappe.has_permission("Task", "create"):
         frappe.throw("You do not have permission to create tasks")
@@ -181,9 +128,9 @@ def create_task_from_report(project, task_name, description=None, status="Open",
             "subject": task_name,
             "description": description,
             "project": project,
-            "status": status,
+            "status": status or "Open",
             "exp_start_date": exp_start_date,
-            "exp_end_date": exp_end_date
+            "exp_end_date": exp_end_date or due_date
         })
 
         # Insert (save) the task first
@@ -227,34 +174,21 @@ def bulk_update_task_status(task_ids, new_status=None, custom_next_action=None, 
     """Bulk update status and/or custom next action for multiple tasks
 
     Args:
-        task_ids (str|list): List of task IDs (sent as JSON string from client)
-        new_status (str): Optional new status value
-        custom_next_action (str): Optional next action value
-        auto_complete (str|bool): Auto-fill completed_on date if status is Completed
-
-    Returns:
-        dict: {"success": bool, "updated": int, "failed": int, "errors": list}
+        task_ids: List of task IDs (or JSON string)
+        new_status: Optional new status value
+        custom_next_action: Optional next action value
+        auto_complete: Auto-fill completed_on date if status is Completed
 
     Note: At least one of new_status or custom_next_action must be provided
     """
     import json
-    from frappe.utils import cstr
 
-    # Type conversions - JavaScript sends everything as strings
+    # Parse task_ids if string
     if isinstance(task_ids, str):
         task_ids = json.loads(task_ids)
 
+    # Parse auto_complete to boolean
     auto_complete = parse_bool(auto_complete)
-
-    # Convert to strings and handle None/empty values
-    new_status = cstr(new_status).strip() if new_status else None
-    custom_next_action = cstr(custom_next_action).strip() if custom_next_action else None
-
-    # Treat empty strings as None
-    if new_status == "":
-        new_status = None
-    if custom_next_action == "":
-        custom_next_action = None
 
     # Validate at least one field is being updated
     if not new_status and not custom_next_action:
@@ -322,42 +256,15 @@ def bulk_update_task_status(task_ids, new_status=None, custom_next_action=None, 
 # ----------------------------------------------------------------
 @frappe.whitelist()
 def bulk_update_task_dates(task_ids, exp_start_date=None, exp_end_date=None, only_empty=False):
-    """Bulk update expected dates for multiple tasks
-
-    Args:
-        task_ids (str|list): List of task IDs (sent as JSON string from client)
-        exp_start_date (str): Expected start date in YYYY-MM-DD format
-        exp_end_date (str): Expected end date in YYYY-MM-DD format
-        only_empty (str|bool): Only update if currently empty
-
-    Returns:
-        dict: {"success": bool, "updated": int, "skipped": int, "failed": int, "errors": list}
-    """
+    """Bulk update expected dates for multiple tasks"""
     import json
-    from frappe.utils import getdate
 
-    # Type conversions - JavaScript sends everything as strings
+    # Parse task_ids if string
     if isinstance(task_ids, str):
         task_ids = json.loads(task_ids)
 
+    # Parse only_empty to boolean
     only_empty = parse_bool(only_empty)
-
-    # Validate and convert dates using Frappe's getdate (handles various formats)
-    if exp_start_date:
-        try:
-            exp_start_date = getdate(exp_start_date)
-        except Exception:
-            frappe.throw(f"Invalid start date format: {exp_start_date}")
-
-    if exp_end_date:
-        try:
-            exp_end_date = getdate(exp_end_date)
-        except Exception:
-            frappe.throw(f"Invalid end date format: {exp_end_date}")
-
-    # Validate date logic
-    if exp_start_date and exp_end_date and exp_end_date < exp_start_date:
-        frappe.throw("Expected End Date must be greater than or equal to Expected Start Date")
 
     updated = 0
     skipped = 0
