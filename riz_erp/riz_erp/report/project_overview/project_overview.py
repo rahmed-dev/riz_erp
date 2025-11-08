@@ -457,7 +457,7 @@ def execute(filters=None):
         project_node = {
             "indent": 0,
             "project": p.name,
-            "task_link": f"<b>{p.project_name}</b>",
+            "task_link": f"<a href='/app/project/{p.name}' target='_blank'><b>{p.project_name}</b></a>",
             "type": "",
             "status": "",
             "expected_start_date": "",
@@ -478,9 +478,9 @@ def execute(filters=None):
         {"label": "Next Action", "fieldname": "custom_next_action", "fieldtype": "Data", "width": 150},
         {"label": "Type", "fieldname": "type", "fieldtype": "Data", "width": 100},
         {"label": "Status", "fieldname": "status", "fieldtype": "Data", "width": 90},
-        {"label": "Expected Start", "fieldname": "expected_start_date", "fieldtype": "Date", "width": 120},
-        {"label": "Expected End", "fieldname": "expected_end_date", "fieldtype": "Date", "width": 120},
-        {"label": "Progress %", "fieldname": "progress", "fieldtype": "Percent", "width": 100},
+        {"label": "E. Start", "fieldname": "expected_start_date", "fieldtype": "Date", "width": 90},
+        {"label": "E. End", "fieldname": "expected_end_date", "fieldtype": "Date", "width": 90},
+        {"label": "Prg. %", "fieldname": "progress", "fieldtype": "Percent", "width": 70},
         {"label": "Actions", "fieldname": "actions", "fieldtype": "Data", "width": 150},
     ]
     return columns, data

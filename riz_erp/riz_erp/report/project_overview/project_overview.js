@@ -536,7 +536,7 @@ function showCreateTaskDialog(report, projectName = null) {
             {
                 label: 'Description',
                 fieldname: 'description',
-                fieldtype: 'Small Text'
+                fieldtype: 'Text Editor'
             },
             {
                 label: 'Status',
