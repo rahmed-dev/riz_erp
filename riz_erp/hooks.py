@@ -35,7 +35,7 @@ fixtures = [
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/riz_erp/css/riz_erp.css"
+app_include_css = "/assets/riz_erp/css/riz_erp.css"
 # app_include_js = "/assets/riz_erp/js/riz_erp.js"
 
 # include js, css files in header of web template

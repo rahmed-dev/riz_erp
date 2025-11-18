@@ -45,6 +45,21 @@ def parse_bool(value):
     return bool(value)
 
 
+# -------------------- Helper: Parse Multi-Select --------------------
+# Parses multi-select filter values (list or comma-separated string)
+# Returns list of values - handles Frappe's varying serialization
+# ---------------------------------------------------------------------
+def parse_multi_select(value):
+    """Parse multi-select filter value to list"""
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [v.strip() for v in value if v and str(v).strip()]
+    if isinstance(value, str):
+        return [v.strip() for v in value.split(',') if v.strip()]
+    return []
+
+
 # -------------------- update_task ---------------------------
 # Updates a task's status from the Project Overview report
 # Update Task Next Action field from the Project Overview report.
@@ -415,6 +430,205 @@ def bulk_update_task_dates(task_ids, exp_start_date=None, exp_end_date=None, onl
     }
 
 
+# -------------------- assign_tasks --------------------
+# Assigns user to multiple tasks using Frappe's native assignment API
+# Processes in batches of 10 for performance
+# Requires: Task write permission for each task
+# Returns: Dict with success/failure counts and error details
+# -------------------------------------------------------
+@frappe.whitelist()
+def assign_tasks(task_ids, user):
+    """Assign user to multiple tasks
+
+    Args:
+        task_ids (str|list): List of task IDs (sent as JSON string from client)
+        user (str): User email to assign
+
+    Returns:
+        dict: {"success": bool, "assigned": int, "already_assigned": int, "failed": int, "errors": list}
+    """
+    import json
+    from frappe.utils import cstr
+
+    # Type conversions
+    if isinstance(task_ids, str):
+        task_ids = json.loads(task_ids)
+
+    user = cstr(user).strip()
+
+    # Validate user
+    if not user:
+        return {
+            "success": False,
+            "assigned": 0,
+            "already_assigned": 0,
+            "failed": 0,
+            "errors": ["Please select a user to assign"]
+        }
+
+    assigned = 0
+    already_assigned = 0
+    failed = 0
+    errors = []
+
+    # Get existing assignments for all tasks in one query
+    existing_assignments = frappe.get_all(
+        "ToDo",
+        filters={
+            "reference_type": "Task",
+            "reference_name": ["in", task_ids],
+            "allocated_to": user,
+            "status": "Open"
+        },
+        pluck="reference_name"
+    )
+    existing_set = set(existing_assignments)
+
+    # Process in batches of 10
+    for i in range(0, len(task_ids), 10):
+        batch = task_ids[i:i+10]
+
+        for task_id in batch:
+            try:
+                # Check write permission
+                if not frappe.has_permission("Task", "write", task_id):
+                    failed += 1
+                    errors.append(f"{task_id}: Permission denied")
+                    continue
+
+                # Check if already assigned
+                if task_id in existing_set:
+                    already_assigned += 1
+                    continue
+
+                # Assign using Frappe's native API
+                from frappe.desk.form.assign_to import add
+                add({
+                    "assign_to": [user],
+                    "doctype": "Task",
+                    "name": task_id,
+                    "description": "Assigned from Project Overview"
+                })
+                assigned += 1
+
+            except Exception as e:
+                failed += 1
+                errors.append(f"{task_id}: {str(e)}")
+                frappe.log_error(f"Assignment failed for {task_id}: {str(e)}", "Task Assignment Error")
+
+    return {
+        "success": failed == 0,
+        "assigned": assigned,
+        "already_assigned": already_assigned,
+        "failed": failed,
+        "errors": errors
+    }
+
+
+# -------------------- unassign_tasks --------------------
+# Removes user assignments from multiple tasks
+# Processes in batches of 10 for performance
+# Requires: Task write permission for each task
+# Returns: Dict with success/failure counts and error details
+# ---------------------------------------------------------
+@frappe.whitelist()
+def unassign_tasks(task_ids, users):
+    """Remove user assignments from multiple tasks
+
+    Args:
+        task_ids (str|list): List of task IDs (sent as JSON string from client)
+        users (str|list): List of user emails to unassign
+
+    Returns:
+        dict: {"success": bool, "removed": int, "not_assigned": int, "failed": int, "errors": list}
+    """
+    import json
+    from frappe.utils import cstr
+
+    # Type conversions
+    if isinstance(task_ids, str):
+        task_ids = json.loads(task_ids)
+    if isinstance(users, str):
+        users = json.loads(users)
+
+    # Validate users
+    if not users:
+        return {
+            "success": False,
+            "removed": 0,
+            "not_assigned": 0,
+            "failed": 0,
+            "errors": ["Please select user(s) to remove"]
+        }
+
+    removed = 0
+    not_assigned = 0
+    failed = 0
+    errors = []
+
+    # Get existing assignments for all tasks in one query
+    existing_assignments = frappe.get_all(
+        "ToDo",
+        filters={
+            "reference_type": "Task",
+            "reference_name": ["in", task_ids],
+            "allocated_to": ["in", users],
+            "status": "Open"
+        },
+        fields=["reference_name", "allocated_to"]
+    )
+
+    # Build lookup: {task_id: set of assigned users}
+    assignment_lookup = {}
+    for assignment in existing_assignments:
+        task_name = assignment.reference_name
+        if task_name not in assignment_lookup:
+            assignment_lookup[task_name] = set()
+        assignment_lookup[task_name].add(assignment.allocated_to)
+
+    # Process in batches of 10
+    for i in range(0, len(task_ids), 10):
+        batch = task_ids[i:i+10]
+
+        for task_id in batch:
+            try:
+                # Check write permission
+                if not frappe.has_permission("Task", "write", task_id):
+                    failed += 1
+                    errors.append(f"{task_id}: Permission denied")
+                    continue
+
+                task_assignees = assignment_lookup.get(task_id, set())
+
+                for user_to_remove in users:
+                    # Check if user is assigned to this task
+                    if user_to_remove not in task_assignees:
+                        not_assigned += 1
+                        continue
+
+                    try:
+                        # Remove using Frappe's native API
+                        from frappe.desk.form.assign_to import remove
+                        remove("Task", task_id, user_to_remove)
+                        removed += 1
+                    except Exception as e:
+                        failed += 1
+                        errors.append(f"{task_id}/{user_to_remove}: {str(e)}")
+
+            except Exception as e:
+                failed += 1
+                errors.append(f"{task_id}: {str(e)}")
+                frappe.log_error(f"Unassignment failed for {task_id}: {str(e)}", "Task Unassignment Error")
+
+    return {
+        "success": failed == 0,
+        "removed": removed,
+        "not_assigned": not_assigned,
+        "failed": failed,
+        "errors": errors
+    }
+
+
 # -------------------- execute --------------------
 # Main report execution function
 # Fetches projects and tasks, builds tree structure
@@ -425,63 +639,140 @@ def execute(filters=None):
         filters = {}
 
     data = []
+    all_task_names = []  # Collect all task names for batch assignment fetch
     project_filters = {}
     if filters.get("project"):
         project_filters["name"] = filters.get("project")
 
-    # fetch projects
-    projects = frappe.get_all("Project", fields=["name", "project_name"], filters=project_filters)
+    # fetch projects with percent_complete for progress bar
+    projects = frappe.get_all("Project", fields=["name", "project_name", "percent_complete"], filters=project_filters)
 
+    # Handle assigned_to filter - get task IDs assigned to selected users (multi-select)
+    assigned_to_values = parse_multi_select(filters.get("assigned_to"))
+    assigned_task_ids = None
+    if assigned_to_values:
+        assigned_tasks = frappe.get_all(
+            "ToDo",
+            filters={
+                "reference_type": "Task",
+                "allocated_to": ["in", assigned_to_values],
+                "status": "Open"
+            },
+            pluck="reference_name"
+        )
+        assigned_task_ids = set(assigned_tasks) if assigned_tasks else set()
+
+    # First pass: collect all tasks per project
+    project_tasks = {}
     for p in projects:
         # Build task filter
         task_filters = {"project": p.name}
 
-        # Handle status filtering
-        if filters.get("status"):
-            # User explicitly selected a status - use that
-            task_filters["status"] = filters.get("status")
+        # Handle status filtering (multi-select)
+        status_values = parse_multi_select(filters.get("status"))
+        if status_values:
+            task_filters["status"] = ["in", status_values]
         elif not filters.get("show_completed_tasks"):
             # No specific status selected AND show_completed unchecked - hide completed
             task_filters["status"] = ["not in", ["Completed", "Cancelled"]]
+
+        # Apply assigned_to filter if set
+        if assigned_task_ids is not None:
+            if not assigned_task_ids:
+                # No tasks assigned to selected users - skip this project
+                continue
+            task_filters["name"] = ["in", list(assigned_task_ids)]
 
         # fetch tasks for this project
         tasks = frappe.get_all(
             "Task",
             filters=task_filters,
-            fields=["name", "subject", "custom_next_action" , "type", "status", "exp_start_date", "exp_end_date", "progress", "parent_task"]
+            fields=["name", "subject", "custom_next_action", "type", "priority", "status", "exp_start_date", "exp_end_date", "progress", "parent_task"]
         )
-        # ✅ Skip project if no tasks found
-        if not tasks:
-          continue
+
+        if tasks:
+            project_tasks[p.name] = {"project": p, "tasks": tasks}
+            all_task_names.extend([t.name for t in tasks])
+
+    # Batch fetch all assignments for all tasks with user full names
+    task_assignments = {}
+    if all_task_names:
+        assignments = frappe.get_all(
+            "ToDo",
+            filters={
+                "reference_type": "Task",
+                "reference_name": ["in", all_task_names],
+                "status": "Open"
+            },
+            fields=["reference_name", "allocated_to"]
+        )
+
+        # Get full names for all assigned users
+        assigned_users = list(set([a.allocated_to for a in assignments]))
+        user_names = {}
+        if assigned_users:
+            users = frappe.get_all(
+                "User",
+                filters={"name": ["in", assigned_users]},
+                fields=["name", "full_name"]
+            )
+            user_names = {u.name: u.full_name or u.name for u in users}
+
+        # Group assignments by task (store as "email:full_name" for client parsing)
+        for assignment in assignments:
+            task_name = assignment.reference_name
+            if task_name not in task_assignments:
+                task_assignments[task_name] = []
+            email = assignment.allocated_to
+            full_name = user_names.get(email, email)
+            task_assignments[task_name].append(f"{email}:{full_name}")
+
+    # Second pass: build data with assignments
+    for project_name, project_data in project_tasks.items():
+        p = project_data["project"]
+        tasks = project_data["tasks"]
+
+        # Use Project's percent_complete field for progress bar
+        project_progress = round(p.percent_complete or 0)
+
         # Project node (parent row)
         project_node = {
             "indent": 0,
             "project": p.name,
             "task_link": f"<a href='/app/project/{p.name}' target='_blank'><b>{p.project_name}</b></a>",
-            "type": "",
+            "custom_next_action": "",
             "status": "",
-            "expected_start_date": "",
+            "priority": "",
+            "assigned_to": "",
             "expected_end_date": "",
-            "progress": "",
-            "name": p.name,  # Add project name for button reference
-            "actions": ""  # Placeholder for actions column
+            "progress": project_progress,  # Smart progress: project % for project rows
+            "is_project": 1,  # Flag for formatter to render as progress bar
+            "name": p.name,
+            # Commented out fields - Option B minimal view
+            # "type": "",
+            # "expected_start_date": "",
+            # "actions": "",
         }
         data.append(project_node)
-        # build and flatten the task tree
-        task_tree = build_task_tree(tasks)
-        data.extend(flatten_task_tree(task_tree, indent=1))
 
-    # column definitions
+        # build and flatten the task tree with assignments
+        task_tree = build_task_tree(tasks)
+        data.extend(flatten_task_tree(task_tree, indent=1, task_assignments=task_assignments))
+
+    # column definitions - Option B minimal view
     columns = [
         {"label": "Project", "fieldname": "project", "fieldtype": "Link", "options": "Project", "width": 70},
-        {"label": "Task Subject", "fieldname": "task_link", "fieldtype": "Data", "width": 450},
-        {"label": "Next Action", "fieldname": "custom_next_action", "fieldtype": "Data", "width": 150},
-        {"label": "Type", "fieldname": "type", "fieldtype": "Data", "width": 100},
-        {"label": "Status", "fieldname": "status", "fieldtype": "Data", "width": 90},
-        {"label": "E. Start", "fieldname": "expected_start_date", "fieldtype": "Date", "width": 90},
-        {"label": "E. End", "fieldname": "expected_end_date", "fieldtype": "Date", "width": 90},
-        {"label": "Prg. %", "fieldname": "progress", "fieldtype": "Percent", "width": 70},
-        {"label": "Actions", "fieldname": "actions", "fieldtype": "Data", "width": 150},
+        {"label": "Task Subject", "fieldname": "task_link", "fieldtype": "Data", "width": 300},
+        {"label": "Next Action", "fieldname": "custom_next_action", "fieldtype": "Data", "width": 120},
+        {"label": "Status", "fieldname": "status", "fieldtype": "Data", "width": 80},
+        {"label": "Priority", "fieldname": "priority", "fieldtype": "Data", "width": 70},
+        {"label": "Assigned To", "fieldname": "assigned_to", "fieldtype": "Data", "width": 100},
+        {"label": "E. End", "fieldname": "expected_end_date", "fieldtype": "Date", "width": 85},
+        {"label": "Progress", "fieldname": "progress", "fieldtype": "Data", "width": 100},
+        # Commented out columns - Option B minimal view
+        # {"label": "Type", "fieldname": "type", "fieldtype": "Data", "width": 100},
+        # {"label": "E. Start", "fieldname": "expected_start_date", "fieldtype": "Date", "width": 90},
+        # {"label": "Actions", "fieldname": "actions", "fieldtype": "Data", "width": 150},
     ]
     return columns, data
 
@@ -516,25 +807,37 @@ def build_task_tree(tasks):
 # Adds indent level and formats task links
 # Returns: List of row dictionaries for the report
 # -----------------------------------------------------------
-def flatten_task_tree(tree, indent=1):
+def flatten_task_tree(tree, indent=1, task_assignments=None):
     """Flatten tree recursively for display"""
+    if task_assignments is None:
+        task_assignments = {}
+
     result = []
     for name, t in tree.items():
         task_link = f"<a href='/app/task/{t['name']}' target='_blank'>{t['subject']}</a>"
+
+        # Get assignments for this task (comma-separated for formatter)
+        assignees = task_assignments.get(t["name"], [])
+        assigned_to = ",".join(assignees) if assignees else ""
+
         row = {
             "indent": indent,
             "project": "",
             "task_link": task_link,
             "custom_next_action": t.get("custom_next_action", ""),
-            "type": t.get("type", "Task"),
             "status": t.get("status"),
-            "expected_start_date": t.get("exp_start_date"),
+            "priority": t.get("priority", ""),
+            "assigned_to": assigned_to,
             "expected_end_date": t.get("exp_end_date"),
-            "progress": t.get("progress"),
-            "name": t["name"],  # Add task name for button reference
-            "actions": "",  # Placeholder for actions column
+            "progress": t.get("progress"),  # Smart progress: task % for task rows
+            "is_project": 0,  # Flag for formatter
+            "name": t["name"],
+            # Commented out fields - Option B minimal view
+            # "type": t.get("type", "Task"),
+            # "expected_start_date": t.get("exp_start_date"),
+            # "actions": "",
         }
         result.append(row)
         if t["children"]:
-            result.extend(flatten_task_tree({c["name"]: c for c in t["children"]}, indent + 1))
+            result.extend(flatten_task_tree({c["name"]: c for c in t["children"]}, indent + 1, task_assignments))
     return result

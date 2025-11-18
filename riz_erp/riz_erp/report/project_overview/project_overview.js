@@ -31,9 +31,53 @@ let selectedTaskIds = new Set();
 
 frappe.query_reports["Project Overview"] = {
     // -------------------- Filters --------------------
-    // Filters are defined in project_overview.json
-    // show_completed_tasks: Check (default: 0)
-    // -------------------------------------------------
+    filters: [
+        {
+            fieldname: 'project',
+            label: __('Project'),
+            fieldtype: 'Link',
+            width: '80',
+            options: 'Project'
+        },
+        {
+            fieldname: 'status',
+            label: __('Status'),
+            fieldtype: 'MultiSelectList',
+            width: '80',
+            options: ['Open', 'Working', 'Pending Review', 'Overdue', 'Template', 'Completed', 'Cancelled'],
+            get_data: function(txt) {
+                let statuses = ['Open', 'Working', 'Pending Review', 'Overdue', 'Template', 'Completed', 'Cancelled'];
+                let options = [];
+                for (let status of statuses) {
+                    if (!txt || status.toLowerCase().includes(txt.toLowerCase())) {
+                        options.push({
+                            value: status,
+                            label: __(status),
+                            description: ''
+                        });
+                    }
+                }
+                return options;
+            }
+        },
+        {
+            fieldname: 'assigned_to',
+            label: __('Assigned To'),
+            fieldtype: 'MultiSelectList',
+            width: '80',
+            options: 'User',
+            get_data: function(txt) {
+                return frappe.db.get_link_options('User', txt);
+            }
+        },
+        {
+            fieldname: 'show_completed_tasks',
+            label: __('Show Completed Tasks'),
+            fieldtype: 'Check',
+            width: '80',
+            default: 0
+        }
+    ],
 
     // -------------------- onload --------------------
     // Initializes the report when loaded
@@ -60,6 +104,20 @@ frappe.query_reports["Project Overview"] = {
             showCreateTaskDialog(report);
         });
 
+        // Assignment group buttons (hidden by default, visible when tasks selected)
+        report.page.add_inner_button(__('Assign'), function() {
+            showAssignDialog(report);
+        }, __('Assignment'));
+
+        report.page.add_inner_button(__('Unassign'), function() {
+            showUnassignDialog(report);
+        }, __('Assignment'));
+
+        // Hide Assignment dropdown initially
+        setTimeout(() => {
+            report.page.inner_toolbar.find('.dropdown:has(.dropdown-menu .dropdown-item:contains("Assign"))').hide();
+        }, 100);
+
         // -------------------- Update Button Visibility --------------------
         // Shows/hides bulk operation buttons based on task selection
         // ------------------------------------------------------------------
@@ -69,6 +127,9 @@ frappe.query_reports["Project Overview"] = {
             // Show/hide buttons based on selection
             report.page.inner_toolbar.find('.btn-default:contains("Update Task")').toggle(hasSelection);
             report.page.inner_toolbar.find('.btn-default:contains("Update Dates")').toggle(hasSelection);
+
+            // Show/hide Assignment dropdown based on selection
+            report.page.inner_toolbar.find('.dropdown:has(.dropdown-menu .dropdown-item:contains("Assign"))').toggle(hasSelection);
         }
 
         // Store reference for use in checkbox handler
@@ -229,6 +290,22 @@ frappe.query_reports["Project Overview"] = {
             value = checkboxHtml + value;
         }
 
+        // -------------------- Priority Rendering --------------------
+        // Uses badge-pill class (like indicator-pill but without dot)
+        // Low=blue, Medium=orange, High=red, Urgent=darkred
+        // ---------------------------------------------------------------
+        if (column.fieldname === "priority" && data && data.priority) {
+            const priority = data.priority.toLowerCase();
+            let colorClass = "gray";
+
+            if (priority === "low") colorClass = "blue";
+            else if (priority === "medium") colorClass = "orange";
+            else if (priority === "high") colorClass = "red";
+            else if (priority === "urgent") colorClass = "darkred";
+
+            value = `<span class="badge-pill ${colorClass}">${frappe.utils.escape_html(data.priority)}</span>`;
+        }
+
         // -------------------- Status Rendering --------------------
         // Use Frappe's built-in indicator pills with colors
         // ----------------------------------------------------------
@@ -246,16 +323,72 @@ frappe.query_reports["Project Overview"] = {
             value = `<span class="indicator-pill ${indicator_color}">${frappe.utils.escape_html(data.status)}</span>`;
         }
 
-        // -------------------- Update Task Button (Tasks Only) --------------------
-        // Adds "Update Task" button to task rows (indent > 0)
-        // ---------------------------------------------------------------------------
-        if (column.fieldname === "actions" && data && data.indent > 0) {
-            value = `<button class="btn btn-xs btn-primary btn-update-status"
-                     data-task-name="${data.name}"
-                     data-current-status="${data.status || ''}">
-                     Update Task
-                     </button>`;
+        // -------------------- Smart Progress Rendering --------------------
+        // Project rows: CSS progress bar with color coding
+        // Task rows: Simple percentage text
+        // ------------------------------------------------------------------
+        if (column.fieldname === "progress" && data && data.progress !== null && data.progress !== undefined) {
+            const percent = data.progress;
+
+            if (data.is_project === 1) {
+                // Project row: Show progress bar
+                const color = percent < 50 ? '#ff5858' : percent < 80 ? '#ffb65c' : '#36d399';
+                value = `
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <div style="width:60px;height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden">
+                            <div style="width:${percent}%;height:100%;background:${color};border-radius:4px;transition:width 0.3s"></div>
+                        </div>
+                        <span style="font-size:12px;color:#6b7280">${percent}%</span>
+                    </div>
+                `;
+            } else {
+                // Task row: Show simple percentage
+                value = `<span style="font-size:12px;color:#6b7280">${percent}%</span>`;
+            }
         }
+
+        // -------------------- Assigned To Rendering --------------------
+        // Render circular avatars with single initial, left-aligned
+        // Data format: "email1:fullname1,email2:fullname2,..."
+        // ----------------------------------------------------------------
+        if (column.fieldname === "assigned_to" && data && data.assigned_to) {
+            const userEntries = data.assigned_to.split(',').filter(u => u.trim());
+            if (userEntries.length > 0) {
+                const maxDisplay = 3;
+                const displayEntries = userEntries.slice(0, maxDisplay);
+                const overflow = userEntries.length - maxDisplay;
+
+                let avatarsHtml = displayEntries.map(entry => {
+                    // Parse "email:full_name" format
+                    const [email, fullName] = entry.split(':');
+                    const displayName = fullName || email.split('@')[0];
+                    // Single initial from first name
+                    const initial = displayName.trim()[0].toUpperCase();
+                    return `<span class="avatar avatar-small" style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#d1d5db;color:#374151;font-size:11px;font-weight:500;margin-right:4px;cursor:default" title="${frappe.utils.escape_html(fullName || email)}">${initial}</span>`;
+                }).join('');
+
+                if (overflow > 0) {
+                    const overflowNames = userEntries.slice(maxDisplay).map(e => e.split(':')[1] || e.split(':')[0]).join(', ');
+                    avatarsHtml += `<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#e5e7eb;color:#6b7280;font-size:10px;font-weight:500" title="${overflowNames}">+${overflow}</span>`;
+                }
+
+                value = `<div style="display:flex;align-items:center">${avatarsHtml}</div>`;
+            } else {
+                value = '';
+            }
+        }
+
+        // -------------------- Update Task Button (Tasks Only) --------------------
+        // Commented out - Option B minimal view removes Actions column
+        // Users can click Task Subject link to open task, or use toolbar buttons
+        // ---------------------------------------------------------------------------
+        // if (column.fieldname === "actions" && data && data.indent > 0) {
+        //     value = `<button class="btn btn-xs btn-primary btn-update-status"
+        //              data-task-name="${data.name}"
+        //              data-current-status="${data.status || ''}">
+        //              Update Task
+        //              </button>`;
+        // }
 
         // -------------------- Create Task Button (Projects Only) --------------------
         // Adds "Create Task" button to project rows (indent == 0)
@@ -607,6 +740,196 @@ function showCreateTaskDialog(report, projectName = null) {
         }
     });
     d.show();
+}
+
+// -------------------- showAssignDialog --------------------
+// Displays dialog for assigning user to selected tasks
+// ----------------------------------------------------------
+function showAssignDialog(report) {
+    if (!validateSelection()) return;
+
+    const count = selectedTaskIds.size;
+    let d = new frappe.ui.Dialog({
+        title: count === 1 ? __('Assign User to Task') : __('Assign User to {0} Tasks', [count]),
+        fields: [
+            {
+                fieldtype: 'HTML',
+                options: buildTaskListHTML(selectedTaskIds, report)
+            },
+            {
+                label: 'Assign To',
+                fieldname: 'assigned_to',
+                fieldtype: 'Link',
+                options: 'User',
+                reqd: 1
+            }
+        ],
+        primary_action_label: 'Assign',
+        primary_action(values) {
+            if (!values.assigned_to) {
+                frappe.msgprint(__('Please select a user'));
+                return;
+            }
+
+            d.get_primary_btn().prop('disabled', true);
+
+            frappe.call({
+                method: "riz_erp.riz_erp.report.project_overview.project_overview.assign_tasks",
+                args: {
+                    task_ids: Array.from(selectedTaskIds),
+                    user: values.assigned_to
+                },
+                freeze: true,
+                freeze_message: __('Assigning user to {0} tasks...', [count]),
+                callback: function(r) {
+                    if (r.message) {
+                        handleAssignmentResponse(r.message, report, 'assign');
+                        d.hide();
+                    } else {
+                        d.get_primary_btn().prop('disabled', false);
+                    }
+                },
+                error: function() {
+                    d.get_primary_btn().prop('disabled', false);
+                    frappe.msgprint({
+                        title: __('Error'),
+                        message: __('Failed to assign tasks. Please try again.'),
+                        indicator: 'red'
+                    });
+                }
+            });
+        }
+    });
+    d.show();
+}
+
+// -------------------- showUnassignDialog --------------------
+// Displays dialog for removing assignments from selected tasks
+// Shows all assignees across selected tasks as checkboxes
+// ------------------------------------------------------------
+function showUnassignDialog(report) {
+    if (!validateSelection()) return;
+
+    // Get all unique assignees from selected tasks
+    const assignees = getAssigneesFromSelectedTasks(report);
+    if (assignees.length === 0) {
+        frappe.msgprint(__('No assignments to remove from selected tasks'));
+        return;
+    }
+
+    const count = selectedTaskIds.size;
+    let d = new frappe.ui.Dialog({
+        title: __('Remove Assignments'),
+        fields: [
+            {
+                fieldtype: 'HTML',
+                options: buildTaskListHTML(selectedTaskIds, report)
+            },
+            {
+                label: 'Select Users to Remove',
+                fieldname: 'users_to_remove',
+                fieldtype: 'MultiCheck',
+                options: assignees.map(email => ({
+                    label: email,
+                    value: email
+                })),
+                columns: 2
+            }
+        ],
+        primary_action_label: 'Remove',
+        primary_action(values) {
+            const selectedUsers = values.users_to_remove || [];
+            if (selectedUsers.length === 0) {
+                frappe.msgprint(__('Please select at least one user to remove'));
+                return;
+            }
+
+            d.get_primary_btn().prop('disabled', true);
+
+            frappe.call({
+                method: "riz_erp.riz_erp.report.project_overview.project_overview.unassign_tasks",
+                args: {
+                    task_ids: Array.from(selectedTaskIds),
+                    users: selectedUsers
+                },
+                freeze: true,
+                freeze_message: __('Removing assignments from {0} tasks...', [count]),
+                callback: function(r) {
+                    if (r.message) {
+                        handleAssignmentResponse(r.message, report, 'unassign');
+                        d.hide();
+                    } else {
+                        d.get_primary_btn().prop('disabled', false);
+                    }
+                },
+                error: function() {
+                    d.get_primary_btn().prop('disabled', false);
+                    frappe.msgprint({
+                        title: __('Error'),
+                        message: __('Failed to remove assignments. Please try again.'),
+                        indicator: 'red'
+                    });
+                }
+            });
+        }
+    });
+    d.show();
+}
+
+// -------------------- handleAssignmentResponse --------------------
+// Processes API response for assign/unassign operations
+// Auto-refreshes report and clears selections
+// ------------------------------------------------------------------
+function handleAssignmentResponse(result, report, action) {
+    let msg = '';
+
+    if (action === 'assign') {
+        msg = `${result.assigned} task(s) assigned`;
+        if (result.already_assigned > 0) msg += `, ${result.already_assigned} already assigned`;
+    } else {
+        msg = `${result.removed} assignment(s) removed`;
+        if (result.not_assigned > 0) msg += `, ${result.not_assigned} not assigned`;
+    }
+
+    if (result.failed > 0) {
+        msg += `, ${result.failed} failed`;
+        if (result.errors && result.errors.length > 0) {
+            msg += `<br><br><strong>Errors:</strong><br>${result.errors.slice(0, 5).join('<br>')}`;
+            if (result.errors.length > 5) msg += `<br>and ${result.errors.length - 5} more...`;
+        }
+    }
+
+    frappe.msgprint({
+        title: result.success ? __('Success') : __('Partial Success'),
+        message: msg,
+        indicator: result.success ? 'green' : 'orange'
+    });
+
+    report.refresh();
+    clearSelections(report);
+}
+
+// -------------------- getAssigneesFromSelectedTasks --------------------
+// Gets all unique assignees from selected tasks
+// Returns array of email addresses (parsed from "email:fullname" format)
+// -----------------------------------------------------------------------
+function getAssigneesFromSelectedTasks(report) {
+    const assignees = new Set();
+
+    if (!report || !report.data) return [];
+
+    Array.from(selectedTaskIds).forEach(taskId => {
+        const task = report.data.find(row => row.name === taskId);
+        if (task && task.assigned_to) {
+            task.assigned_to.split(',').filter(u => u.trim()).forEach(entry => {
+                // Parse "email:fullname" format, extract email
+                const email = entry.split(':')[0].trim();
+                if (email) assignees.add(email);
+            });
+        }
+    });
+
+    return Array.from(assignees);
 }
 
 // -------------------- getTaskDetailsFromReport --------------------

@@ -1,0 +1,78 @@
+/*
+ * RizERP Custom Styles
+ * ====================
+ */
+
+/* Badge - Like indicator-pill but without the dot */
+.badge-pill {
+    display: inline-flex;
+    align-items: center;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    padding: 4.5px 8px;
+    border-radius: var(--border-radius-full);
+    height: 20px;
+}
+
+/* Badge color variants - uses same Frappe CSS variables as indicator-pill */
+.badge-pill.green {
+    background: var(--bg-green);
+    color: var(--text-on-green);
+}
+
+.badge-pill.cyan {
+    background: var(--bg-cyan);
+    color: var(--text-on-cyan);
+}
+
+.badge-pill.blue {
+    background: var(--bg-blue);
+    color: var(--text-on-blue);
+}
+
+.badge-pill.orange {
+    background: var(--bg-orange);
+    color: var(--text-on-orange);
+}
+
+.badge-pill.yellow {
+    background: var(--bg-yellow);
+    color: var(--text-on-yellow);
+}
+
+.badge-pill.gray,
+.badge-pill.grey {
+    background: var(--bg-gray);
+    color: var(--text-on-gray);
+}
+
+.badge-pill.red {
+    background: var(--bg-red);
+    color: var(--text-on-red);
+}
+
+.badge-pill.pink {
+    background: var(--bg-pink);
+    color: var(--text-on-pink);
+}
+
+.badge-pill.darkgrey {
+    background: var(--bg-darkgrey);
+    color: var(--text-on-darkgrey);
+}
+
+.badge-pill.purple {
+    background: var(--bg-purple);
+    color: var(--text-on-purple);
+}
+
+.badge-pill.light-blue {
+    background: var(--bg-light-blue);
+    color: var(--text-on-light-blue);
+}
+
+/* Custom priority colors - darker shades for urgency */
+.badge-pill.darkred {
+    background: #7f1d1d;
+    color: #ffffff;
+}

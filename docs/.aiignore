@@ -1,7 +1,0 @@
-# AI Agent Ignore File
-# Files and folders listed here should be ignored by AI agents unless explicitly requested
-
-# Completed/archived stories - only read if user specifically asks
-archive/
-
-# This file helps reduce token usage by preventing agents from reading irrelevant historical data

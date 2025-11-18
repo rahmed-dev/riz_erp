@@ -1,33 +1,20 @@
-### Riz Erp
+# Riz ERP
 
-App for Essential Customization
+Custom Frappe/ERPNext enhancements for project management and reporting.
 
-### Installation
+## Features
 
-You can install this app using the [bench](https://github.com/frappe/bench) CLI:
+### Reports
+- **Project Overview** - Enhanced task management report with:
+  - Multi-select filters (Status, Assigned To)
+  - Bulk task assignment/unassignment
+  - Visual progress bars
+  - Priority badges
+  - Assigned user avatars
 
-```bash
-cd $PATH_TO_YOUR_BENCH
-bench get-app $URL_OF_THIS_REPO --branch develop
-bench install-app riz_erp
-```
+### Custom Components
+- **badge-pill** - CSS class for badges without indicator dots
 
-### Contributing
+## License
 
-This app uses `pre-commit` for code formatting and linting. Please [install pre-commit](https://pre-commit.com/#installation) and enable it for this repository:
-
-```bash
-cd apps/riz_erp
-pre-commit install
-```
-
-Pre-commit is configured to use the following tools for checking and formatting your code:
-
-- ruff
-- eslint
-- prettier
-- pyupgrade
-
-### License
-
-mit
+MIT
