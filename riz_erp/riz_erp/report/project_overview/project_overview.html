@@ -34,24 +34,25 @@
     font-size: 11px;
     border-radius: 12px;
     overflow: hidden;
-    border: 1px solid #ddd;
+    border: 2px solid #333;
 }
 .project-table th {
     background: #f5f5f5;
-    padding: 12px 10px;
+    padding: 6px 8px;
     text-align: left;
     font-weight: 600;
     color: #333;
-    font-size: 10px;
+    font-size: 9px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     border-bottom: 2px solid #ddd;
 }
 .project-table td {
-    padding: 10px;
+    padding: 3px 8px;
     vertical-align: middle;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid #ccc;
     color: #333;
+    line-height: 1.2;
 }
 .project-table tbody tr:last-child td {
     border-bottom: none;
@@ -62,32 +63,38 @@
     background: #f5f5f5 !important;
 }
 .project-row td {
-    padding: 14px 10px;
+    padding: 5px 8px;
     font-weight: 700;
-    font-size: 12px;
+    font-size: 11px;
     color: #000;
 }
 .project-row td:first-child {
     border-left: 3px solid #333;
 }
 
-/* Task Indentation */
+/* Task Tree Structure */
+.tree-indicator {
+    color: #999;
+    font-family: monospace;
+    margin-right: 4px;
+    font-size: 10px;
+}
 .task-indent-1 td:first-child {
-    padding-left: 24px;
+    padding-left: 16px;
 }
 .task-indent-2 td:first-child {
-    padding-left: 44px;
+    padding-left: 32px;
 }
 .task-indent-3 td:first-child {
-    padding-left: 64px;
+    padding-left: 48px;
 }
 
 /* Status Badges - Colored pills (only colored element) */
 .status-badge {
     display: inline-block;
-    padding: 4px 10px;
+    padding: 3px 8px;
     border-radius: 20px;
-    font-size: 9px;
+    font-size: 8px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -117,11 +124,11 @@
 .progress-container {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
 }
 .progress-bar {
-    width: 60px;
-    height: 8px;
+    width: 50px;
+    height: 6px;
     background: #e5e5e5;
     border-radius: 10px;
     overflow: hidden;
@@ -133,7 +140,7 @@
     background: #333;
 }
 .progress-text {
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 600;
     color: #666;
 }
@@ -159,50 +166,58 @@
         </tr>
     </thead>
     <tbody>
-        {% for row in data %}
-            {% if row.is_project == 1 %}
+        {% for (var i = 0; i < data.length; i++) { %}
+            {% var row = data[i]; %}
+            {% if (row.is_project == 1) { %}
             <tr class="project-row">
                 <td>{{ row.task_link ? row.task_link.replace(/<[^>]*>/g, "") : row.name }}</td>
                 <td></td>
                 <td></td>
                 <td>
-                    {% if row.progress != null %}
-                    {% var pct = parseInt(row.progress) || 0 %}
+                    {% if (row.progress != null) { %}
+                    {% var pct = parseInt(row.progress) || 0; %}
                     <div class="progress-container">
                         <div class="progress-bar">
-                            <div class="progress-fill" style="width: {{ pct }}%;"></div>
+                            <div class="progress-fill" style="width: {{ pct }}%"></div>
                         </div>
                         <span class="progress-text">{{ pct }}%</span>
                     </div>
-                    {% endif %}
+                    {% } %}
                 </td>
                 <td></td>
             </tr>
-            {% else %}
-            {% var indentLevel = row.indent > 3 ? 3 : row.indent %}
+            {% } else { %}
+            {% var indentLevel = row.indent > 3 ? 3 : row.indent; %}
+            {% var isLastAtLevel = true; %}
+            {% for (var j = i + 1; j < data.length; j++) { %}
+                {% if (data[j].is_project == 1) { break; } %}
+                {% if (data[j].indent == row.indent) { isLastAtLevel = false; break; } %}
+                {% if (data[j].indent < row.indent) { break; } %}
+            {% } %}
+            {% var treeChar = isLastAtLevel ? "└" : "├"; %}
             <tr class="task-indent-{{ indentLevel }}">
-                <td>{{ row.task_link ? row.task_link.replace(/<[^>]*>/g, "") : "" }}</td>
+                <td><span class="tree-indicator">{{ treeChar }}</span>{{ row.task_link ? row.task_link.replace(/<[^>]*>/g, "") : "" }}</td>
                 <td>
-                    {% if row.status %}
-                    {% var statusClass = row.status.toLowerCase().replace(/ /g, "-") %}
+                    {% if (row.status) { %}
+                    {% var statusClass = row.status.toLowerCase().replace(/ /g, "-"); %}
                     <span class="status-badge status-{{ statusClass }}">{{ row.status }}</span>
-                    {% endif %}
+                    {% } %}
                 </td>
                 <td>{{ row.custom_next_action || "" }}</td>
                 <td>
-                    {% if row.progress != null %}
-                    {% var pct = parseInt(row.progress) || 0 %}
+                    {% if (row.progress != null) { %}
+                    {% var pct = parseInt(row.progress) || 0; %}
                     <div class="progress-container">
                         <div class="progress-bar">
-                            <div class="progress-fill" style="width: {{ pct }}%;"></div>
+                            <div class="progress-fill" style="width: {{ pct }}%"></div>
                         </div>
                         <span class="progress-text">{{ pct }}%</span>
                     </div>
-                    {% endif %}
+                    {% } %}
                 </td>
-                <td>{% if row.expected_end_date %}{{ frappe.datetime.str_to_user(row.expected_end_date) }}{% endif %}</td>
+                <td>{% if (row.expected_end_date) { %}{{ frappe.datetime.str_to_user(row.expected_end_date) }}{% } %}</td>
             </tr>
-            {% endif %}
-        {% endfor %}
+            {% } %}
+        {% } %}
     </tbody>
 </table>
