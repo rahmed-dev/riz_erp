@@ -104,22 +104,19 @@ frappe.query_reports["Project Overview"] = {
             showCreateTaskDialog(report);
         });
 
-        // Assignment group buttons (hidden by default, visible when tasks selected)
+        // Assignment buttons (ungrouped, hidden by default, conditionally visible)
         report.page.add_inner_button(__('Assign'), function() {
             showAssignDialog(report);
-        }, __('Assignment'));
+        }).hide();  // Hidden by default
 
         report.page.add_inner_button(__('Unassign'), function() {
             showUnassignDialog(report);
-        }, __('Assignment'));
-
-        // Hide Assignment dropdown initially
-        setTimeout(() => {
-            report.page.inner_toolbar.find('.dropdown:has(.dropdown-menu .dropdown-item:contains("Assign"))').hide();
-        }, 100);
+        }).hide();  // Hidden by default
 
         // -------------------- Update Button Visibility --------------------
         // Shows/hides bulk operation buttons based on task selection
+        // Assign button: always shown when tasks selected
+        // Unassign button: only shown when at least one selected task has assignments
         // ------------------------------------------------------------------
         function updateButtonVisibility() {
             const hasSelection = selectedTaskIds.size > 0;
@@ -128,14 +125,27 @@ frappe.query_reports["Project Overview"] = {
             report.page.inner_toolbar.find('.btn-default:contains("Update Task")').toggle(hasSelection);
             report.page.inner_toolbar.find('.btn-default:contains("Update Dates")').toggle(hasSelection);
 
-            // Show/hide Assignment dropdown based on selection
-            report.page.inner_toolbar.find('.dropdown:has(.dropdown-menu .dropdown-item:contains("Assign"))').toggle(hasSelection);
+            // Assign button: show when any task is selected
+            report.page.inner_toolbar.find('.btn-default:contains("Assign")').toggle(hasSelection);
+
+            // Unassign button: only show if at least one selected task has assignments
+            let hasAssignments = false;
+            if (hasSelection && report && report.data) {
+                for (const taskId of selectedTaskIds) {
+                    const task = report.data.find(row => row.name === taskId);
+                    if (task && task.assigned_to && task.assigned_to.trim()) {
+                        hasAssignments = true;
+                        break;
+                    }
+                }
+            }
+            report.page.inner_toolbar.find('.btn-default:contains("Unassign")').toggle(hasAssignments);
         }
 
         // Store reference for use in checkbox handler
         report.updateButtonVisibility = updateButtonVisibility;
 
-        // Minimal functional styles for checkboxes only
+        // Minimal functional styles for checkboxes and column alignment
         const styleId = "project-overview-functional";
         if (!document.getElementById(styleId)) {
             const style = document.createElement("style");
@@ -149,6 +159,11 @@ frappe.query_reports["Project Overview"] = {
                 }
                 .selected-task-row {
                     background: rgba(66, 133, 244, 0.08) !important;
+                }
+                /* Left-align all column headers and cells */
+                .dt-header .dt-cell__content,
+                .dt-row .dt-cell__content {
+                    text-align: left !important;
                 }
             `;
             document.head.appendChild(style);

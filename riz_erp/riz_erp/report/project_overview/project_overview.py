@@ -738,8 +738,8 @@ def execute(filters=None):
         # Project node (parent row)
         project_node = {
             "indent": 0,
-            "project": p.name,
-            "task_link": f"<a href='/app/project/{p.name}' target='_blank'><b>{p.project_name}</b></a>",
+            "project": "",  # Empty for project rows - ID shown in task_link
+            "task_link": f"<a href='/app/project/{p.name}' target='_blank'><b>{p.name}</b> - {p.project_name}</a>",
             "custom_next_action": "",
             "status": "",
             "priority": "",
@@ -761,12 +761,12 @@ def execute(filters=None):
 
     # column definitions - Option B minimal view
     columns = [
-        {"label": "Project", "fieldname": "project", "fieldtype": "Link", "options": "Project", "width": 70},
-        {"label": "Task Subject", "fieldname": "task_link", "fieldtype": "Data", "width": 300},
-        {"label": "Next Action", "fieldname": "custom_next_action", "fieldtype": "Data", "width": 120},
+        {"label": "S.", "fieldname": "project", "fieldtype": "Link", "options": "Project", "width": 50},
+        {"label": "Task Subject", "fieldname": "task_link", "fieldtype": "Data", "width": 400},
+        {"label": "Next Action", "fieldname": "custom_next_action", "fieldtype": "Data", "width": 120, "align": "left"},
         {"label": "Status", "fieldname": "status", "fieldtype": "Data", "width": 80},
-        {"label": "Priority", "fieldname": "priority", "fieldtype": "Data", "width": 70},
-        {"label": "Assigned To", "fieldname": "assigned_to", "fieldtype": "Data", "width": 100},
+        {"label": "Priority", "fieldname": "priority", "fieldtype": "Data", "width": 72, "align": "left"},
+        {"label": "Asg. To", "fieldname": "assigned_to", "fieldtype": "Data", "width": 110},
         {"label": "E. End", "fieldname": "expected_end_date", "fieldtype": "Date", "width": 85},
         {"label": "Progress", "fieldname": "progress", "fieldtype": "Data", "width": 100},
         # Commented out columns - Option B minimal view
