@@ -1,0 +1,208 @@
+<style>
+/* Modern Print Styles - Clean Black & White */
+.print-header {
+    text-align: center;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid #000;
+}
+.print-header h1 {
+    font-size: 28px;
+    margin: 0 0 8px 0;
+    font-weight: 700;
+    color: #000;
+    letter-spacing: -0.5px;
+}
+.print-header .print-date {
+    font-size: 11px;
+    color: #666;
+}
+.filters-info {
+    font-size: 10px;
+    color: #666;
+    margin-bottom: 16px;
+    padding: 8px 12px;
+    background: #f5f5f5;
+    border-radius: 8px;
+}
+
+/* Table Styles */
+.project-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 11px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #ddd;
+}
+.project-table th {
+    background: #f5f5f5;
+    padding: 12px 10px;
+    text-align: left;
+    font-weight: 600;
+    color: #333;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid #ddd;
+}
+.project-table td {
+    padding: 10px;
+    vertical-align: middle;
+    border-bottom: 1px solid #eee;
+    color: #333;
+}
+.project-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Project Row - Header style with progress */
+.project-row {
+    background: #f5f5f5 !important;
+}
+.project-row td {
+    padding: 14px 10px;
+    font-weight: 700;
+    font-size: 12px;
+    color: #000;
+}
+.project-row td:first-child {
+    border-left: 3px solid #333;
+}
+
+/* Task Indentation */
+.task-indent-1 td:first-child {
+    padding-left: 24px;
+}
+.task-indent-2 td:first-child {
+    padding-left: 44px;
+}
+.task-indent-3 td:first-child {
+    padding-left: 64px;
+}
+
+/* Status Badges - Colored pills (only colored element) */
+.status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.status-open {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+.status-working {
+    background: #fef3c7;
+    color: #b45309;
+}
+.status-pending-review {
+    background: #fef9c3;
+    color: #a16207;
+}
+.status-completed {
+    background: #dcfce7;
+    color: #15803d;
+}
+.status-cancelled, .status-overdue {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+/* Progress Bar - Black & White */
+.progress-container {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.progress-bar {
+    width: 60px;
+    height: 8px;
+    background: #e5e5e5;
+    border-radius: 10px;
+    overflow: hidden;
+    display: inline-block;
+}
+.progress-fill {
+    height: 100%;
+    border-radius: 10px;
+    background: #333;
+}
+.progress-text {
+    font-size: 10px;
+    font-weight: 600;
+    color: #666;
+}
+</style>
+
+<div class="print-header">
+    <h1>Project Update</h1>
+    <div class="print-date">Generated: {{ frappe.datetime.str_to_user(frappe.datetime.nowdate()) }}</div>
+</div>
+
+{% if subtitle %}
+<div class="filters-info">{{ subtitle }}</div>
+{% endif %}
+
+<table class="project-table">
+    <thead>
+        <tr>
+            <th style="width: 38%">Task Subject</th>
+            <th style="width: 10%">Status</th>
+            <th style="width: 22%">Next Action</th>
+            <th style="width: 15%">Progress</th>
+            <th style="width: 15%">Exp End</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in data %}
+            {% if row.is_project == 1 %}
+            <tr class="project-row">
+                <td>{{ row.task_link ? row.task_link.replace(/<[^>]*>/g, "") : row.name }}</td>
+                <td></td>
+                <td></td>
+                <td>
+                    {% if row.progress != null %}
+                    {% var pct = parseInt(row.progress) || 0 %}
+                    <div class="progress-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: {{ pct }}%;"></div>
+                        </div>
+                        <span class="progress-text">{{ pct }}%</span>
+                    </div>
+                    {% endif %}
+                </td>
+                <td></td>
+            </tr>
+            {% else %}
+            {% var indentLevel = row.indent > 3 ? 3 : row.indent %}
+            <tr class="task-indent-{{ indentLevel }}">
+                <td>{{ row.task_link ? row.task_link.replace(/<[^>]*>/g, "") : "" }}</td>
+                <td>
+                    {% if row.status %}
+                    {% var statusClass = row.status.toLowerCase().replace(/ /g, "-") %}
+                    <span class="status-badge status-{{ statusClass }}">{{ row.status }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ row.custom_next_action || "" }}</td>
+                <td>
+                    {% if row.progress != null %}
+                    {% var pct = parseInt(row.progress) || 0 %}
+                    <div class="progress-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: {{ pct }}%;"></div>
+                        </div>
+                        <span class="progress-text">{{ pct }}%</span>
+                    </div>
+                    {% endif %}
+                </td>
+                <td>{% if row.expected_end_date %}{{ frappe.datetime.str_to_user(row.expected_end_date) }}{% endif %}</td>
+            </tr>
+            {% endif %}
+        {% endfor %}
+    </tbody>
+</table>

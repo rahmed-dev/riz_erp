@@ -30,6 +30,13 @@ const TASK_STATUSES = ['Open', 'Working', 'Pending Review', 'Completed', 'Cancel
 let selectedTaskIds = new Set();
 
 frappe.query_reports["Project Overview"] = {
+    // -------------------- HTML Format for Print --------------------
+    html_format: "project_overview",
+
+    // -------------------- Tree View Settings --------------------
+    tree: true,
+    initial_depth: 1,
+
     // -------------------- Filters --------------------
     filters: [
         {
@@ -84,6 +91,26 @@ frappe.query_reports["Project Overview"] = {
     // Sets up CSS styles and event listeners for buttons
     // ------------------------------------------------
     onload: function (report) {
+        // -------------------- Auto-refresh on page load with filters --------------------
+        // When page is hard-refreshed, filters persist but report doesn't auto-execute
+        // This checks if filters exist from URL and triggers refresh after filters are set
+        // --------------------------------------------------------------------------------
+        setTimeout(function() {
+            // Check if any filter has a value from URL params
+            const urlParams = new URLSearchParams(window.location.search);
+            const hasFilters = urlParams.has('project') || urlParams.has('status') ||
+                              urlParams.has('assigned_to') || urlParams.has('show_completed_tasks');
+
+            if (hasFilters && report.get_values) {
+                const filters = report.get_values();
+                // Check if at least one filter has a value
+                if (filters.project || (filters.status && filters.status.length) ||
+                    (filters.assigned_to && filters.assigned_to.length)) {
+                    report.refresh();
+                }
+            }
+        }, 100);
+
         // -------------------- Add Frappe Toolbar Buttons --------------------
         // Uses Frappe's built-in button system
         // Buttons visibility updates based on task selection
