@@ -2,6 +2,8 @@
 
 Custom Frappe/ERPNext enhancements for project management and reporting.
 
+![Report Preview](assets/preview.png)
+
 ## Features
 
 ### Reports
